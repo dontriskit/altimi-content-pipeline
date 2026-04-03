@@ -10,6 +10,7 @@
  */
 
 import type { Env, Article } from "./types";
+import { r2Key } from "./types";
 import { ARTICLES } from "./pipeline/articles";
 
 // Re-export workflow classes for wrangler
@@ -48,6 +49,18 @@ export default {
       const statusMatch = path.match(/^\/research\/([a-z0-9-]+)\/status$/);
       if (statusMatch && request.method === "GET") {
         return handleResearchStatus(env, statusMatch[1]);
+      }
+
+      // Start article generation for a specific article
+      const genMatch = path.match(/^\/generate\/([a-z0-9-]+)$/);
+      if (genMatch && request.method === "POST") {
+        return handleStartGeneration(env, genMatch[1]);
+      }
+
+      // Get article content from R2
+      const contentMatch = path.match(/^\/content\/([a-z0-9-]+)$/);
+      if (contentMatch && request.method === "GET") {
+        return handleGetContent(env, contentMatch[1]);
       }
 
       return json({ error: "Not found" }, 404);
@@ -188,6 +201,46 @@ async function handleResearchStatus(env: Env, slug: string): Promise<Response> {
   }
 
   return json({ article, reports });
+}
+
+async function handleStartGeneration(env: Env, slug: string): Promise<Response> {
+  const article = await env.DB.prepare(
+    `SELECT * FROM articles WHERE slug = ?`
+  ).bind(slug).first<Article>();
+
+  if (!article) return json({ error: `Article not found: ${slug}` }, 404);
+  if (article.research_status !== "completed") {
+    return json({ error: "Research not completed yet. Wait for research to finish." }, 400);
+  }
+  if (article.assembly_status === "completed") {
+    return json({ message: "Article already generated", slug });
+  }
+
+  const instance = await env.ARTICLE_GEN_WORKFLOW.create({
+    id: `article-${slug}`,
+    params: { slug },
+  });
+
+  await env.DB.prepare(
+    `UPDATE articles SET synthesis_status = 'in_progress', updated_at = datetime('now') WHERE slug = ?`
+  ).bind(slug).run();
+
+  return json({
+    message: "Article generation workflow started",
+    slug,
+    workflowId: instance.id,
+    note: "Synthesize research → generate article with charts/FAQ/sources → generate images. ~30-45 minutes.",
+  });
+}
+
+async function handleGetContent(env: Env, slug: string): Promise<Response> {
+  const articleJson = await env.BUCKET.get(r2Key(slug, "article", "article_complete.json"));
+  if (!articleJson) return json({ error: "Article not generated yet" }, 404);
+
+  const content = await articleJson.text();
+  return new Response(content, {
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 // ── Helpers ──
