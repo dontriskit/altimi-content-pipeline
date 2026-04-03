@@ -28,7 +28,7 @@ interface ArticleGenParams {
   slug: string;
 }
 
-const GEMINI_PRO_MODEL = "gemini-3-pro";
+const GEMINI_PRO_MODEL = "gemini-3.1-pro-preview";
 const RATE_LIMIT_MS = 65_000;
 
 export class ArticleGenWorkflow extends WorkflowEntrypoint<Env, ArticleGenParams> {
@@ -246,7 +246,7 @@ Return a JSON object with:
       for (const { key, prompt } of imagePrompts) {
         try {
           const response = await client.models.generateContent({
-            model: "gemini-3-pro-image-preview",
+            model: "gemini-3.1-pro-preview-image-preview",
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             config: {
               responseModalities: ["IMAGE", "TEXT"],
