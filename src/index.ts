@@ -63,6 +63,12 @@ export default {
         return handleGetContent(env, contentMatch[1]);
       }
 
+      // Publish article to target site
+      const pubMatch = path.match(/^\/publish\/([a-z0-9-]+)$/);
+      if (pubMatch && request.method === "POST") {
+        return handlePublish(env, pubMatch[1]);
+      }
+
       return json({ error: "Not found" }, 404);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -240,6 +246,29 @@ async function handleGetContent(env: Env, slug: string): Promise<Response> {
   const content = await articleJson.text();
   return new Response(content, {
     headers: { "Content-Type": "application/json" },
+  });
+}
+
+async function handlePublish(env: Env, slug: string): Promise<Response> {
+  const article = await env.DB.prepare(
+    `SELECT * FROM articles WHERE slug = ?`
+  ).bind(slug).first<Article>();
+
+  if (!article) return json({ error: `Article not found: ${slug}` }, 404);
+  if (article.assembly_status !== "completed") {
+    return json({ error: "Article not generated yet. Run /generate/:slug first." }, 400);
+  }
+
+  const instance = await env.PUBLISH_WORKFLOW.create({
+    id: `publish-${slug}`,
+    params: { slug },
+  });
+
+  return json({
+    message: "Publish workflow started",
+    slug,
+    target_site: article.target_site,
+    workflowId: instance.id,
   });
 }
 
