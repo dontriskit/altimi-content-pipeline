@@ -1,0 +1,43 @@
+name = "altimi-content-pipeline"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
+# usage_model = "standard" # default for Workers
+
+# Account
+account_id = "44c2cfe8d65d85cfe6d7b3d02d4cc394"
+
+# Database — article metadata + state tracking
+[[d1_databases]]
+binding = "DB"
+database_name = "altimi-content-pipeline"
+database_id = "49969f31-6ffa-46fc-ac7e-039ff5828b6b"
+
+# R2 — all artifacts (research, articles, images, HTML)
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "altimi-content"
+
+# Workflow 1: Deep Research (3 streams per article)
+[[workflows]]
+name = "deep-research"
+binding = "DEEP_RESEARCH_WORKFLOW"
+class_name = "DeepResearchWorkflow"
+
+# Workflow 2: Article Generation (synthesis → article → charts → images → HTML)
+[[workflows]]
+name = "article-gen"
+binding = "ARTICLE_GEN_WORKFLOW"
+class_name = "ArticleGenWorkflow"
+
+# Workflow 3: Publish to target site
+[[workflows]]
+name = "publish"
+binding = "PUBLISH_WORKFLOW"
+class_name = "PublishWorkflow"
+
+[vars]
+GEMINI_AGENT = "deep-research-pro-preview-12-2025"
+RATE_LIMIT_SECONDS = "65"
+VERTEX_PROJECT = "prism-476123"
+VERTEX_LOCATION = "global"
