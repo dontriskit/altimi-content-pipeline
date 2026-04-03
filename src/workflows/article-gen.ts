@@ -27,8 +27,8 @@ interface ArticleGenParams {
   slug: string;
 }
 
-const MODEL = "gemini-2.5-pro-preview-05-06";
-const FLASH = "gemini-2.5-flash-preview-05-20";
+const MODEL = "gemini-3.1-pro-preview";
+const FLASH = "gemini-3.1-pro-preview";
 const RATE_LIMIT_MS = 5_000;
 
 export class ArticleGenWorkflow extends WorkflowEntrypoint<Env, ArticleGenParams> {
