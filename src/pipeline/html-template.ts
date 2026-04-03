@@ -166,7 +166,7 @@ function insertSectionImages(html: string, images: { url: string; alt: string }[
   return html.replace(/<\/h2>/gi, (match) => {
     if (imageIdx < images.length) {
       const img = images[imageIdx++];
-      return `</h2>\n<figure class="article-image"><img src="${img.url}" alt="${img.alt}" loading="lazy"></figure>`;
+      return `</h2>\n<figure class="article-image"><img src="/cdn-cgi/image/width=1200,quality=80,format=auto${img.url}" alt="${img.alt}" loading="lazy"></figure>`;
     }
     return match;
   });
@@ -389,7 +389,7 @@ export function assembleAltimiHtml(input: ArticleAssemblyInput): string {
     </header>
 
     <main class="max-w-3xl mx-auto px-4 py-12">
-        ${input.heroImageUrl ? `<figure class="article-image mb-8"><img src="${input.heroImageUrl}" alt="${input.title}" loading="lazy"></figure>` : ""}
+        ${input.heroImageUrl ? `<figure class="article-image mb-8"><img src="/cdn-cgi/image/width=1200,quality=80,format=auto${input.heroImageUrl}" alt="${input.title}" loading="lazy"></figure>` : ""}
 
         <header class="mb-8">
             <span class="section-label">${input.primaryKeyword}</span>
