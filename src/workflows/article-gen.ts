@@ -333,11 +333,23 @@ RULES:
       const client = new GoogleGenAI({ apiKey: this.env.GEMINI_API_KEY });
       const prompts: { key: string; prompt: string; alt: string }[] = [];
 
+      // Strip brand names from all image prompts - prevents hallucinated logos
+      function cleanImagePrompt(p: string): string {
+        return p
+          .replace(/altimi/gi, "")
+          .replace(/['"]altimi['"]/gi, "")
+          .replace(/with\s+['"]?\w+['"]?\s+wordmark/gi, "")
+          .replace(/brand\s+name/gi, "")
+          .replace(/logo/gi, "")
+          .replace(/\s{2,}/g, " ")
+          .trim() + " No text, no logos, no brand names, no watermarks.";
+      }
+
       if (outlineData.hero_image_prompt) {
-        prompts.push({ key: "hero", prompt: outlineData.hero_image_prompt, alt: research.title });
+        prompts.push({ key: "hero", prompt: cleanImagePrompt(outlineData.hero_image_prompt), alt: research.title });
       }
       for (const [i, img] of (outlineData.section_image_prompts || []).entries()) {
-        prompts.push({ key: `section_${i}`, prompt: img.prompt, alt: img.alt || "" });
+        prompts.push({ key: `section_${i}`, prompt: cleanImagePrompt(img.prompt), alt: img.alt || "" });
       }
 
       let generated = 0;
