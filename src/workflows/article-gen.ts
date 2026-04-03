@@ -54,12 +54,31 @@ export class ArticleGenWorkflow extends WorkflowEntrypoint<Env, ArticleGenParams
 
       // Extract real URLs from research responses + report text
       const allUrls = new Set<string>();
-      const urlRegex = /https?:\/\/(?!vertexaisearch\.cloud\.google\.com)(?!grounding-api-redirect)[^\s)\]>,"'<]{4,}/g;
+      const vertexUrls: string[] = [];
+      const urlRegex = /https?:\/\/[^\s)\]>,"'<]{4,}/g;
       for (const text of [...streams, ...responseJsons]) {
         for (const rawUrl of text.match(urlRegex) || []) {
           const url = rawUrl.replace(/[.,;:!?\])+}]+$/, "");
-          try { new URL(url); allUrls.add(url); } catch {}
+          try {
+            const parsed = new URL(url);
+            if (parsed.hostname.includes("vertexaisearch.cloud.google.com") || parsed.hostname.includes("grounding-api-redirect")) {
+              vertexUrls.push(url);
+            } else {
+              allUrls.add(url);
+            }
+          } catch {}
         }
+      }
+
+      // Resolve Vertex redirect URLs to real destinations
+      for (const vUrl of vertexUrls.slice(0, 30)) {
+        try {
+          const resp = await fetch(vUrl, { redirect: "follow", headers: { "User-Agent": "Mozilla/5.0" } });
+          const finalUrl = resp.url;
+          if (finalUrl && !finalUrl.includes("vertexaisearch") && !finalUrl.includes("grounding-api-redirect")) {
+            allUrls.add(finalUrl);
+          }
+        } catch {}
       }
 
       return {
@@ -96,8 +115,16 @@ ${research.streams[1].slice(0, 20000)}
 ## Stream 3 (${research.streams[2].length} chars)
 ${research.streams[2].slice(0, 20000)}
 
-## Real source URLs extracted from research (use these, NOT placeholders):
-${research.extractedUrls.join("\n")}
+## REAL source URLs extracted from research reports (USE THESE EXACT URLs):
+${research.extractedUrls.map((u: string, i: number) => `${i+1}. ${u}`).join("\n")}
+
+CRITICAL INSTRUCTION FOR SOURCES:
+- For each source in your output, find the MATCHING full URL from the list above
+- Use the EXACT URL, not a homepage or shortened version
+- If a source's specific URL is not in the list, use the most specific URL you can find from the research text
+- NEVER use vertexaisearch.cloud.google.com URLs
+- NEVER use example.com URLs
+- NEVER use just a bare domain like "www.mckinsey.com" - use the full article/report URL
 
 ## Task
 Return JSON:
@@ -326,7 +353,8 @@ RULES:
           if (candidates[0]?.content?.parts) {
             for (const part of candidates[0].content.parts) {
               if (part.inlineData?.data) {
-                const bytes = Uint8Array.from(atob(part.inlineData.data), c => c.charCodeAt(0));
+                // Workers: decode base64 using Buffer (nodejs_compat)
+                const bytes = Buffer.from(part.inlineData.data, "base64");
                 await this.env.BUCKET.put(
                   r2Key(slug, "images", `${key}.jpg`),
                   bytes,
