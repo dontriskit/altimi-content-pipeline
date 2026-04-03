@@ -54,13 +54,25 @@ export default {
       // Start article generation for a specific article
       const genMatch = path.match(/^\/generate\/([a-z0-9-]+)$/);
       if (genMatch && request.method === "POST") {
-        return handleStartGeneration(env, genMatch[1]);
+        return handleStartGeneration(env, genMatch[1], url.searchParams.get("force") === "true");
       }
 
-      // Get article content from R2
+      // Get raw article JSON from R2
       const contentMatch = path.match(/^\/content\/([a-z0-9-]+)$/);
       if (contentMatch && request.method === "GET") {
         return handleGetContent(env, contentMatch[1]);
+      }
+
+      // Serve assembled HTML article
+      const viewMatch = path.match(/^\/view\/([a-z0-9-]+)$/);
+      if (viewMatch && request.method === "GET") {
+        return handleViewArticle(env, viewMatch[1]);
+      }
+
+      // Serve article images from R2
+      const imgMatch = path.match(/^\/resources\/([a-z0-9-]+)\/images\/(.+)$/);
+      if (imgMatch && request.method === "GET") {
+        return handleArticleImage(env, imgMatch[1], imgMatch[2]);
       }
 
       // Publish article to target site
@@ -209,7 +221,7 @@ async function handleResearchStatus(env: Env, slug: string): Promise<Response> {
   return json({ article, reports });
 }
 
-async function handleStartGeneration(env: Env, slug: string): Promise<Response> {
+async function handleStartGeneration(env: Env, slug: string, force = false): Promise<Response> {
   const article = await env.DB.prepare(
     `SELECT * FROM articles WHERE slug = ?`
   ).bind(slug).first<Article>();
@@ -218,8 +230,8 @@ async function handleStartGeneration(env: Env, slug: string): Promise<Response> 
   if (article.research_status !== "completed") {
     return json({ error: "Research not completed yet. Wait for research to finish." }, 400);
   }
-  if (article.assembly_status === "completed") {
-    return json({ message: "Article already generated", slug });
+  if (article.assembly_status === "completed" && !force) {
+    return json({ message: "Article already generated. Add ?force=true to regenerate.", slug });
   }
 
   const instance = await env.ARTICLE_GEN_WORKFLOW.create({
@@ -269,6 +281,30 @@ async function handlePublish(env: Env, slug: string): Promise<Response> {
     slug,
     target_site: article.target_site,
     workflowId: instance.id,
+  });
+}
+
+async function handleViewArticle(env: Env, slug: string): Promise<Response> {
+  const obj = await env.BUCKET.get(r2Key(slug, "final", "article.html"));
+  if (!obj) return json({ error: "Article not assembled yet. Run /generate/:slug first." }, 404);
+
+  return new Response(obj.body, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "public, max-age=3600",
+    },
+  });
+}
+
+async function handleArticleImage(env: Env, slug: string, filename: string): Promise<Response> {
+  const obj = await env.BUCKET.get(r2Key(slug, "images", filename));
+  if (!obj) return new Response("Not found", { status: 404 });
+
+  return new Response(obj.body, {
+    headers: {
+      "Content-Type": obj.httpMetadata?.contentType || "image/jpeg",
+      "Cache-Control": "public, max-age=86400",
+    },
   });
 }
 
