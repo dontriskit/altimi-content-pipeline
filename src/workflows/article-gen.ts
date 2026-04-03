@@ -41,10 +41,25 @@ export class ArticleGenWorkflow extends WorkflowEntrypoint<Env, ArticleGenParams
       if (!article) throw new Error(`Article not found: ${slug}`);
 
       const streams: string[] = [];
+      const responseJsons: string[] = [];
       for (const n of [1, 2, 3]) {
         const obj = await this.env.BUCKET.get(r2Key(slug, "research", `stream_${n}_report.md`));
         if (!obj) throw new Error(`Stream ${n} not found. Run research first.`);
         streams.push(await obj.text());
+
+        // Also load response JSON for grounding URLs
+        const respObj = await this.env.BUCKET.get(r2Key(slug, "research", `stream_${n}_response.json`));
+        if (respObj) responseJsons.push(await respObj.text());
+      }
+
+      // Extract real URLs from research responses + report text
+      const allUrls = new Set<string>();
+      const urlRegex = /https?:\/\/(?!vertexaisearch\.cloud\.google\.com)(?!grounding-api-redirect)[^\s)\]>,"'<]{4,}/g;
+      for (const text of [...streams, ...responseJsons]) {
+        for (const rawUrl of text.match(urlRegex) || []) {
+          const url = rawUrl.replace(/[.,;:!?\])+}]+$/, "");
+          try { new URL(url); allUrls.add(url); } catch {}
+        }
       }
 
       return {
@@ -53,6 +68,7 @@ export class ArticleGenWorkflow extends WorkflowEntrypoint<Env, ArticleGenParams
         target_site: article.target_site,
         primary_keyword: article.primary_keyword,
         streams,
+        extractedUrls: [...allUrls].slice(0, 50),
       };
     });
 
@@ -80,11 +96,14 @@ ${research.streams[1].slice(0, 20000)}
 ## Stream 3 (${research.streams[2].length} chars)
 ${research.streams[2].slice(0, 20000)}
 
+## Real source URLs extracted from research (use these, NOT placeholders):
+${research.extractedUrls.join("\n")}
+
 ## Task
 Return JSON:
 - narrative: string (3000-4000 words synthesized research brief with all key findings)
-- data_points: array of {label, value, unit, source, source_date, confidence, chart_hint} — EVERY number, percentage, comparison from the research. chart_hint = bar|line|radar|doughnut|comparison|table
-- sources: array of {key, name, url, date} — all cited sources with sequential keys "1", "2", etc.
+- data_points: array of {label, value, unit, source, source_date, confidence, chart_hint} - EVERY number, percentage, comparison from the research. chart_hint = bar|line|radar|doughnut|comparison|table
+- sources: array of {key, name, url, date} - all cited sources with sequential keys "1", "2", etc. CRITICAL: use the REAL full URLs listed above. Match each source name to its actual URL from the research. NEVER use example.com or placeholder URLs. If you cannot find the real URL, use the organization's homepage.
 - conflicts: array of {claim, for, against}` }] }],
         config: {
           responseMimeType: "application/json",
@@ -144,8 +163,8 @@ ${synthesis.slice(0, 15000)}
     }
   ],
   "faq": [{"question": "...", "answer": "..."}],
-  "hero_image_prompt": "detailed text-to-image prompt for Altimi brand style — floating macOS browser window on soft pink-to-blue gradient, navy #0a1926 title bar with 'altimi' wordmark, dashboard/data visualization inside. 4:3 aspect ratio, no people, premium SaaS marketing aesthetic",
-  "section_image_prompts": [{"h2": "...", "prompt": "...", "alt": "..."}]
+  "hero_image_prompt": "detailed text-to-image prompt - floating macOS-style browser window on soft pink-to-blue gradient background, dark navy title bar, professional data visualization or dashboard inside. 16:9 aspect ratio, no people, no text overlays, no logos, no brand names, no watermarks, premium SaaS marketing aesthetic",
+  "section_image_prompts": [{"h2": "...", "prompt": "same style as hero - NO brand names, NO logos, NO text overlays in the prompt", "alt": "..."}]
 }` }] }],
         config: {
           responseMimeType: "application/json",
@@ -201,11 +220,14 @@ ${research.streams[2].slice(0, 10000)}
 5. Use markdown: ## for H2, ### for H3, **bold**, bullet lists, > blockquotes
 6. Add id attributes to headings: ## Section Title {#section-slug}
 7. Opening paragraph must hook with a striking data point
-8. Conclusion naturally references the service CTA (not as a sales pitch)
-9. Be specific — use named companies, dates, exact numbers. No vague claims.
+8. Conclusion naturally references the service CTA. Use a proper markdown link: [Book a call](https://meetings.hubspot.com/jacek-podoba)
+9. Be specific - use named companies, dates, exact numbers. No vague claims.
 10. Present conflicting evidence where it exists. This builds credibility.
+11. DO NOT include a FAQ section in the article body. FAQ is handled separately. End with the conclusion/CTA paragraph.
+12. NEVER use em-dashes (—) or en-dashes (–). Use regular hyphens (-), commas, or rewrite the sentence. Write like a human typing on a keyboard. This is extremely important - NO EM-DASHES ANYWHERE.
+13. NEVER use em-dashes. Seriously. Not even once. Use commas, periods, or hyphens instead.
 
-Return ONLY the markdown article body. No JSON wrapper.` }] }],
+Return ONLY the markdown article body. No JSON wrapper. No FAQ section.` }] }],
         config: {
           maxOutputTokens: 65536,
           thinkingConfig: { thinkingBudget: 8192 },
@@ -253,10 +275,12 @@ Return JSON array:
 
 RULES:
 - Use ONLY real numbers from the research. Do NOT invent data.
-- Use Altimi colors: navy #0a1926, blue #419AF0, magenta #D34489, gray #333333
-- For doughnut/pie: use array of colors in backgroundColor
-- For bar/line: use single color per dataset
-- sourceNote must cite the actual source of the data` }] }],
+- Use these colors: navy #0a1926, blue #419AF0, magenta #D34489, gray #6B7280, green #10b981
+- For doughnut/pie: use array of colors AND every dataset MUST have a "label" field matching each slice
+- For bar/line: each dataset MUST have a descriptive "label" field
+- ALL charts must have readable labels array with human-friendly names (not IDs)
+- sourceNote must cite the actual source name and year of the data
+- IMPORTANT: labels must be short enough to render without overlapping (max 25 chars each)` }] }],
         config: {
           responseMimeType: "application/json",
           maxOutputTokens: 8192,
@@ -336,18 +360,34 @@ RULES:
       try { synthesisData = JSON.parse(synthesis); } catch { synthesisData = { sources: [] }; }
 
       // Convert markdown to HTML (basic conversion)
-      let articleHtml = articleMd
+      // Strip any FAQ section the LLM might have added to the article body
+      let cleanMd = articleMd.replace(/^#{1,2}\s*(FAQ|Frequently Asked Questions)[\s\S]*$/mi, "");
+
+      // Convert markdown to HTML
+      let articleHtml = cleanMd
+        // Headings with optional {#id}
         .replace(/^### (.*?)(?:\s*\{#([\w-]+)\})?$/gm, (_, title, id) => `<h3 id="${id || slugify(title)}">${title}</h3>`)
         .replace(/^## (.*?)(?:\s*\{#([\w-]+)\})?$/gm, (_, title, id) => `<h2 id="${id || slugify(title)}">${title}</h2>`)
-        .replace(/^\*\*(.+?)\*\*$/gm, "<p><strong>$1</strong></p>")
+        .replace(/^# (.+)$/gm, "") // Strip H1 (we have it in the template)
+        // Markdown links BEFORE other inline formatting
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+        // Inline formatting
         .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
         .replace(/\*(.+?)\*/g, "<em>$1</em>")
+        // Lists
         .replace(/^\- (.+)$/gm, "<li>$1</li>")
-        .replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`)
+        .replace(/^(\d+)\. (.+)$/gm, "<li>$2</li>")
+        .replace(/((?:<li>.*<\/li>\n?)+)/g, (match) => `<ul>${match}</ul>`)
+        // Blockquotes
         .replace(/^> (.+)$/gm, "<blockquote><p>$1</p></blockquote>")
-        .replace(/\[(\d+)\]/g, '<a href="#ref-$1" title="Source [$1]">[$1]</a>')
-        .replace(/^(?!<[hublofdt]|<!--)(.+)$/gm, "<p>$1</p>")
-        .replace(/<p><\/p>/g, "");
+        // Citation markers [N]
+        .replace(/\[(\d+)\]/g, '<a href="#ref-$1" class="citation" title="Source [$1]">[$1]</a>')
+        // Paragraphs (lines that aren't already HTML elements or chart/table markers)
+        .replace(/^(?!<[hublofdt]|<!--|$)(.+)$/gm, "<p>$1</p>")
+        .replace(/<p><\/p>/g, "")
+        // Clean up em-dashes that might have slipped through
+        .replace(/\u2014/g, " - ")
+        .replace(/\u2013/g, "-");
 
       // Build image URLs
       const imageBaseUrl = `/resources/${slug}/images`;

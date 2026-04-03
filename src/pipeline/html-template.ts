@@ -111,7 +111,8 @@ function buildChartScripts(charts: ArticleAssemblyInput["charts"]): string {
         maintainAspectRatio: true,
         plugins: {
           title: { display: true, text: ${JSON.stringify(c.title)}, font: { size: 15, weight: 'normal', family: "'DM Mono', monospace" }, color: '#0a1926', padding: { bottom: 16 } },
-          legend: { display: ${datasets.length > 1}, labels: { font: { size: 12 }, color: '#333' } }
+          legend: { display: true, position: 'bottom', labels: { font: { size: 12 }, color: '#333', padding: 16, usePointStyle: true } },
+          tooltip: { enabled: true }
         },
         scales: ${c.type === 'radar' || c.type === 'doughnut' || c.type === 'pie' ? '{}' : "{ y: { beginAtZero: true, ticks: { color: '#666' }, grid: { color: 'rgba(10,25,38,0.06)' } }, x: { ticks: { color: '#666' }, grid: { display: false } } }"}
       }
