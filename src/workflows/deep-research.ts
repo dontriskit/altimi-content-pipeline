@@ -76,7 +76,7 @@ export class DeepResearchWorkflow extends WorkflowEntrypoint<Env, DeepResearchPa
 
       // Submit to Deep Research API
       const interactionId = await step.do(`submit-${sk}`, {
-        retries: { limit: 3, delay: "45 seconds", backoff: "linear" },
+        retries: { limit: 3, delay: 45, backoff: "linear" },
       }, async () => {
         const client = new GoogleGenAI({ apiKey: this.env.GEMINI_API_KEY });
         const interaction = await client.interactions.create({
@@ -96,10 +96,7 @@ export class DeepResearchWorkflow extends WorkflowEntrypoint<Env, DeepResearchPa
       });
 
       // Poll until complete (up to 45 min)
-      const report = await step.do(`poll-${sk}`, {
-        timeout: "45 minutes",
-        retries: { limit: 0 },
-      }, async () => {
+      const report = await step.do(`poll-${sk}`, async () => {
         const client = new GoogleGenAI({ apiKey: this.env.GEMINI_API_KEY });
         const start = Date.now();
 

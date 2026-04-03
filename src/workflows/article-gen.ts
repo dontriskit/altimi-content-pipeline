@@ -62,8 +62,7 @@ export class ArticleGenWorkflow extends WorkflowEntrypoint<Env, ArticleGenParams
 
     // Step 2: Synthesize research + extract data points
     const synthesis = await step.do("synthesize", {
-      retries: { limit: 2, delay: "45 seconds", backoff: "linear" },
-      timeout: "10 minutes",
+      retries: { limit: 2, delay: 45, backoff: "linear" },
     }, async () => {
       const client = new GoogleGenAI({ apiKey: this.env.GEMINI_API_KEY });
 
@@ -123,8 +122,7 @@ Return a JSON object with:
 
     // Step 3: Generate full article with charts, FAQ, images, sources
     const article = await step.do("generate-article", {
-      retries: { limit: 2, delay: "60 seconds", backoff: "linear" },
-      timeout: "15 minutes",
+      retries: { limit: 2, delay: 60, backoff: "linear" },
     }, async () => {
       const client = new GoogleGenAI({ apiKey: this.env.GEMINI_API_KEY });
 
@@ -223,8 +221,7 @@ Return a JSON object with:
 
     // Step 4: Generate images
     const imageResults = await step.do("generate-images", {
-      retries: { limit: 2, delay: "30 seconds", backoff: "linear" },
-      timeout: "10 minutes",
+      retries: { limit: 2, delay: 30, backoff: "linear" },
     }, async () => {
       let articleData: { hero_image?: { prompt: string }; section_images?: { h2: string; prompt: string }[] };
       try {

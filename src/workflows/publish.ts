@@ -61,7 +61,7 @@ export class PublishWorkflow extends WorkflowEntrypoint<Env, PublishParams> {
 
     // Step 3: Push to GitHub
     const pushed = await step.do("push-to-github", {
-      retries: { limit: 2, delay: "10 seconds", backoff: "linear" },
+      retries: { limit: 2, delay: 10, backoff: "linear" },
     }, async () => {
       const ghToken = (this.env as any).GITHUB_TOKEN;
       if (!ghToken) throw new Error("GITHUB_TOKEN not set");

@@ -167,7 +167,7 @@ async function handleStartResearch(env: Env, slug: string): Promise<Response> {
 
   // Start the workflow
   const instance = await env.DEEP_RESEARCH_WORKFLOW.create({
-    id: `research-${slug}`,
+    id: `research-${slug}-${Date.now()}`,
     params: { slug },
   });
 
@@ -223,7 +223,7 @@ async function handleStartGeneration(env: Env, slug: string): Promise<Response> 
   }
 
   const instance = await env.ARTICLE_GEN_WORKFLOW.create({
-    id: `article-${slug}`,
+    id: `article-${slug}-${Date.now()}`,
     params: { slug },
   });
 
@@ -260,7 +260,7 @@ async function handlePublish(env: Env, slug: string): Promise<Response> {
   }
 
   const instance = await env.PUBLISH_WORKFLOW.create({
-    id: `publish-${slug}`,
+    id: `publish-${slug}-${Date.now()}`,
     params: { slug },
   });
 
