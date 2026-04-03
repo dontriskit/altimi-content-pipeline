@@ -343,26 +343,36 @@ RULES:
       let generated = 0;
       for (const { key, prompt } of prompts) {
         try {
-          const resp = await client.models.generateContent({
-            model: "gemini-3-pro-image-preview",
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            config: { responseModalities: ["IMAGE", "TEXT"], imageConfig: { aspectRatio: "16:9", imageSize: "2K" } },
-          });
+          // Use REST API directly - SDK has issues with image response parsing in Workers
+          const apiResp = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key=${this.env.GEMINI_API_KEY}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: [{ role: "user", parts: [{ text: prompt }] }],
+                generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
+              }),
+            },
+          );
 
-          const candidates = resp.candidates || [];
-          if (candidates[0]?.content?.parts) {
-            for (const part of candidates[0].content.parts) {
-              if (part.inlineData?.data) {
-                // Workers: decode base64 using Buffer (nodejs_compat)
-                const bytes = Buffer.from(part.inlineData.data, "base64");
-                await this.env.BUCKET.put(
-                  r2Key(slug, "images", `${key}.jpg`),
-                  bytes,
-                  { httpMetadata: { contentType: part.inlineData.mimeType || "image/jpeg" } },
-                );
-                generated++;
-                break;
-              }
+          if (!apiResp.ok) {
+            console.error(`Image API error for ${key}: ${apiResp.status}`);
+            continue;
+          }
+
+          const data = await apiResp.json() as any;
+          const parts = data?.candidates?.[0]?.content?.parts || [];
+          for (const part of parts) {
+            if (part.inlineData?.data) {
+              const bytes = Buffer.from(part.inlineData.data, "base64");
+              await this.env.BUCKET.put(
+                r2Key(slug, "images", `${key}.jpg`),
+                bytes,
+                { httpMetadata: { contentType: part.inlineData.mimeType || "image/jpeg" } },
+              );
+              generated++;
+              break;
             }
           }
           await new Promise(r => setTimeout(r, 3000));
